@@ -25,7 +25,7 @@ start_row: 30
 
 # Pads for masking SN and host
 galmaskpad: 2
-snmaskpad: 2
+snmaskpad: 3
 
 # Cutout size
 # The y #s seem backwards but it is this way because

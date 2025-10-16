@@ -221,24 +221,29 @@ def get_sn_host_loc(fname, sciext, snra, sndec, hostra, hostdec):
     return xsn, ysn, xhost, yhost
 
 
-def get_all_masks(cfg):
+def get_sn_mask(cfg):
     # We actually need to create the masks first
     # mask the SN
     # Note that these indices are relative to the cutout indices.
     # because the cutout was already centered on xsn we can just
     # mask out hte central pixels
+
+    # Oct 2025 update: Now only masking the SN when we
+    # have host and multiple contaminant galaxies.
+
     snmaskpad = cfg['snmaskpad']
-    galmaskpad = cfg['galmaskpad']
+    cs_x = cfg['cutoutsize_x']
+    # galmaskpad = cfg['galmaskpad']
     sn_mask_idx = np.arange(int(cs_x/2) - snmaskpad,
                             int(cs_x/2) + snmaskpad)
     # mask the galaxy
     # print('Host cutout center idx:', cutout_host_x)
-    gal_mask_idx = np.arange(cutout_host_x - galmaskpad,
-                             cutout_host_x + galmaskpad)
+    # gal_mask_idx = np.arange(cutout_host_x - galmaskpad,
+    #                          cutout_host_x + galmaskpad)
 
-    combinedmask = np.union1d(sn_mask_idx, gal_mask_idx)
+    # combinedmask = np.union1d(sn_mask_idx, gal_mask_idx)
     # print('combined mask:', combinedmask)
-    return combinedmask, gal_mask_idx, sn_mask_idx
+    return sn_mask_idx
 
 
 def select_contam_gal(fname, cfg):
@@ -309,7 +314,7 @@ def select_contam_gal(fname, cfg):
     return contam_gal_list
 
 
-def gen_host_model(cutout, fname, cfg):
+def gen_contam_model(cutout, fname, cfg):
 
     # host_model_to_fit = 'moffat'
     # sn_model_to_fit = 'moffat'
@@ -336,7 +341,7 @@ def gen_host_model(cutout, fname, cfg):
     # spectrum is not subtracted out in the final step, which is to
     # get the SN spectrum as the difference between the original data
     # and the contamination model.
-    combinedmask, gal_mask_idx, sn_mask_idx = get_all_masks(cfg)
+    sn_mask_idx = get_sn_mask(cfg)
 
     # ----- Figure out which objects are to be fit and generate compound model
     """
@@ -361,7 +366,7 @@ def gen_host_model(cutout, fname, cfg):
 
     for i in range(start_row, end_row):
         if verbose:
-            print('\nFitting row:', i, end='\r')
+            print('Fitting row:', i, end='\r')
         profile_pix = cutout[i]
 
         # ----- Apply a Savitsky-Golay filter to the data, if user requested
@@ -387,7 +392,8 @@ def gen_host_model(cutout, fname, cfg):
         """
 
         # ------ Proceed to fitting
-        contam_fit = fit_1d(profile_pix, xarr, contam_gal_centers,
+        xfit, yfit, pflag = prep_fit(cfg, profile_pix, xarr, mask=sn_mask_idx)
+        contam_fit = fit_1d(yfit, xfit, contam_gal_centers,
                             xhostloc=cutout_host_x, row_idx=i)
 
         # OLD code when SN and HOST were fit separately
@@ -418,36 +424,24 @@ def gen_host_model(cutout, fname, cfg):
         if cfg['showfit']:
             print('----------------')
             print('Contamination fit result:')
-            print(galaxy_fit)
+            print(contam_fit)
 
             fig = plt.figure(figsize=(7, 5))
             ax1 = fig.add_subplot(311)
             ax2 = fig.add_subplot(312)
-            ax3 = fig.add_subplot(313)
             # plot points and fit
             ax1.plot(xarr, profile_pix, 'o', markersize=4, color='k')
             # ax1.set_yscale('log')
-            ax1.plot(xarr, moffat_fit(xarr), color='orange',
-                     label='SN fit. Row: ' + str(i))
-            ax1.plot(xarr, galaxy_fit(xarr), color='green', label='Galaxy fit')
-            ax1.plot(xarr, moffat_fit(xarr) + galaxy_fit(xarr), color='r',
-                     label='Full fit')
+            ax1.plot(xarr, contam_fit(xarr), color='orange',
+                     label='Contam fit. Row: ' + str(i))
             ax1.legend(loc=0)
 
-            # plot galaxy residuals
-            ax2.scatter(xarr, profile_pix - galaxy_fit(xarr), s=5, color='k',
-                        label='Residuals after removing galaxy fit')
-            ax2.legend(loc=0)
-            # plot galaxy mask
-            ax2.axvspan(gal_mask_idx[0], gal_mask_idx[-1], alpha=0.3,
-                        color='gray')
-
             # plot SN residuals
-            ax3.scatter(xarr, profile_pix - moffat_fit(xarr), s=5, c='k',
-                        label='Residuals after removing SN fit')
-            ax3.legend(loc=0)
+            ax2.scatter(xarr, profile_pix - contam_fit(xarr), s=5, c='k',
+                        label='Residuals after removing contam fit')
+            ax2.legend(loc=0)
             # plot SN mask
-            ax3.axvspan(sn_mask_idx[0], sn_mask_idx[-1], alpha=0.3,
+            ax2.axvspan(sn_mask_idx[0], sn_mask_idx[-1], alpha=0.3,
                         color='gray')
 
             plt.show()
@@ -467,7 +461,7 @@ def gen_host_model(cutout, fname, cfg):
     return contam_model, contam_fit_params
 
 
-def update_host_model(cutout, hmodel, hfit_par, cfg):
+def update_contam_model(cutout, contam_model, contam_par, cfg):
 
     iter_flag = False
 
@@ -562,8 +556,8 @@ def update_host_model(cutout, hmodel, hfit_par, cfg):
     # that are empty and fill them in with interpolation.
     # first find all zero rows
     zero_row_idxs = []
-    for r in range(start_row, hmodel.shape[0]):
-        current_row = hmodel[r]
+    for r in range(start_row, contam_model.shape[0]):
+        current_row = contam_model[r]
         # test for all zeros
         if not current_row.any():
             zero_row_idxs.append(r)
@@ -580,8 +574,8 @@ def update_host_model(cutout, hmodel, hfit_par, cfg):
             rows_to_fill.append(idx)
 
     for row in rows_to_fill:
-        avg_row = (hmodel[row-1] + hmodel[row+1]) / 2
-        hmodel[row] = avg_row
+        avg_row = (contam_model[row-1] + contam_model[row+1]) / 2
+        contam_model[row] = avg_row
 
     if verbose:
         print('Filled in rows:', rows_to_fill)
@@ -592,6 +586,7 @@ def update_host_model(cutout, hmodel, hfit_par, cfg):
     # Find contiguous zero row idxs in the host model
     # Need to convert to boolean array first.
     # This boolean array is True where the host model has a zero row.
+    """
     zero_row_bool = np.zeros(hmodel.shape[0], dtype=bool)
     zero_row_bool[zero_row_idxs] = True
     cont_zero_rows = get_contiguous_slices(zero_row_bool, min_length=2)
@@ -631,15 +626,16 @@ def update_host_model(cutout, hmodel, hfit_par, cfg):
         else:
             galaxy_fit, stack_res = fit_stack(cutout, stack_row_idx)
             hmodel[stack_row_idx] = galaxy_fit(xarr)
+    """
 
     # ---------
     # Smooth out the host model
-    for col in range(hmodel.shape[1]):
-        current_col = hmodel[:, col]
-        newcol = savgol_filter(current_col, window_length=8, polyorder=3)
-        hmodel[:, col] = newcol
+    for col in range(contam_model.shape[1]):
+        current_col = contam_model[:, col]
+        newcol = savgol_filter(current_col, window_length=5, polyorder=3)
+        contam_model[:, col] = newcol
 
-    return iter_flag, hmodel, hfit_par
+    return iter_flag, contam_model, contam_par
 
 
 def fit_stack(cutout, st):
@@ -650,10 +646,10 @@ def fit_stack(cutout, st):
     # NOw fit to the stack and replace all zero rows
     # in the host model with this fit
     # We're going to force fit the mean stack regardless of the prep flag
-    combinedmask, gal_mask_idx, sn_mask_idx = get_all_masks(cfg)
+    sn_mask_idx = get_sn_mask(cfg)
     gal_x_fit, gal_y_fit, gal_prep_flag = prep_fit(cfg, mean_stack, xarr,
                                                    mask=sn_mask_idx)
-    gfit = fit_1d(gal_y_fit, gal_x_fit, xloc=cutout_host_x,
+    gfit = fit_1d(gal_y_fit, gal_x_fit, xhostloc=cutout_host_x,
                   model='moffat')
 
     # Show stack, fit, and data that went into the stack
@@ -704,28 +700,30 @@ if __name__ == '__main__':
 
     # TODO list
     print('\nTODO LIST:')
-    print('* NOTE: Automate the cropping later. You will need galaxy',
-          'half-light radius or the a & b elliptical axes from',
+    print('* NOTE: Automate the cropping later. You will need galaxy\n',
+          'half-light radius or the a & b elliptical axes from\n',
           'something like SExtractor to measure the cutout size.')
-    print('* NOTE: Using default half-light radius initial guess.',
+    print('* NOTE: Using default half-light radius initial guess.\n',
           'This would be better if user provided.')
-    print('* NOTE: Using only Sersic/Gaussian profile to fit galaxy.',
-          'This really should be a model profile convolved with',
+    print('* NOTE: Using only Sersic/Gaussian profile to fit galaxy.\n',
+          'This really should be a model profile convolved with\n',
           'lambda dependent PSF. Convolve Moffat for SN with PSF too.')
-    print('* NOTE: Try to fill in NaN values in the observed data? Only if',
-          'all 8 pixels surrounding a NaN pixel are valid values.')
+    print('* NOTE: Try to fill in NaN values in the observed data?\n',
+          'Only if all 8 pixels surrounding a NaN pixel are valid values.')
     print('* NOTE: Figure out how to handle ERR and DQ extensions.')
     print('* NOTE: Show resid hist with SN masked.')
     print('* NOTE: Try grid of sims.')
-    print('* NOTE: Also need code to handle case where a host galaxy spectrum',
-          'is much wider than the usual cutout size of 100x300 pix.',
+    print('* NOTE: Add a polynomial fit for the dispersed background.')
+    print('* NOTE: Also need code to handle case where a host',
+          'galaxy spectrum\n',
+          'is much wider than the usual cutout size of 100x300 pix.\n',
           'E.g., This could be a nearby galaxy that covers much of the FoV.')
-    print('NOTE: TODO for contam gal search', '\n',
+    print('* NOTE: TODO for contam gal search', '\n',
           '(i) determine effect of PA on contam gal search.', '\n',
           '(ii) how does the contam gal search change',
           'if the trace is not exactly vertical.')
-    print('* NOTE: Move to testing with HST data once above items are done.',
-          'One of the tests should be a comparison to what',
+    print('* NOTE: Move to testing with HST data once above items are done.\n',
+          'One of the tests should be a comparison to what\n',
           'Russell had for Graur et al.')
     print('\n')
 
@@ -910,7 +908,7 @@ if __name__ == '__main__':
         ax3 = fig.add_subplot(133)
 
         ax1.imshow(np.log10(cutout), origin='lower', vmin=1.5, vmax=2.5)
-        ax1.set_title('SN + Host original image cutout')
+        ax1.set_title('Original image cutout')
 
         ax2.imshow(np.log10(contam_model), origin='lower', vmin=1.5, vmax=2.5)
         ax2.set_title('File: ' + fname + '\n' + 'Contamination model')
@@ -948,14 +946,16 @@ if __name__ == '__main__':
                  color='mediumseagreen', label='Input SN spec')
 
         # Also plot the SN spectrum without host contamination subtracted
-        ax1.plot(specwav, sn_1d_phys_host, '-',
-                 color='slategray', lw=1.5,
-                 label='SN spec without host\n' + 'contam. subtracted')
+        # ax1.plot(specwav, sn_1d_phys_host, '-',
+        #          color='slategray', lw=1.5,
+        #          label='SN spec without host\n' + 'contam. subtracted')
 
         ax1.legend(loc=0, fontsize=10)
 
+        ylim_specplot = 1.5e-19
+
         ax1.set_xlim(0.65, 2.0)
-        ax1.set_ylim(0, 1.5e-19)
+        ax1.set_ylim(0, ylim_specplot)
 
         ax1.set_xticklabels([])
 
