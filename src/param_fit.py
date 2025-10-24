@@ -14,15 +14,18 @@ import os
 # from tqdm import tqdm
 from pprint import pprint
 import yaml
+import subprocess
 
 home = os.getenv('HOME')
-prismdir = hostsubdir = home + '/Documents/Roman/PIT/prism/'
+prismdir = home + '/Documents/Roman/PIT/prism/'
 hostsubdir = prismdir + 'hostlight_subtraction/'
 datadir = hostsubdir + 'simdata_prism_galsn/'
-
-x1d_dir = home + '/Documents/Roman/prism_quick_reduction/romanprism-fast-x1d/'
-sys.path.append(x1d_dir)
+utils_dir = hostsubdir + 'roman-prism-hostsub/utils/'
+sys.path.append(utils_dir)
 import romanprism_fast_x1d as oned_utils  # noqa
+import get_app_mag as gm  # noqa
+from bcolors import bcolors as bc  # noqa
+import romanprismdefs as rdef  # noqa
 
 
 def get_model_init(model, y_fit, x_fit, xhostloc, contamloc):
@@ -55,17 +58,16 @@ def get_model_init(model, y_fit, x_fit, xhostloc, contamloc):
                                         'alpha': (0, 10)})
 
     # NOw the SN
-    sn_amp_init = y_fit.max() / 2
-    sn_x0_init = 50
+    # sn_amp_init = y_fit.max() / 2
+    # sn_x0_init = 50
+    # sn_init = models.Moffat1D(amplitude=sn_amp_init, x_0=sn_x0_init,
+    #                           gamma=gamma_init, alpha=alpha_init,
+    #                           fixed={'x_0': True},
+    #                           bounds={'amplitude': (0, sn_amp_init),
+    #                                   'gamma': (0, 10),
+    #                                   'alpha': (0, 10)})
 
-    sn_init = models.Moffat1D(amplitude=sn_amp_init, x_0=sn_x0_init,
-                              gamma=gamma_init, alpha=alpha_init,
-                              fixed={'x_0': True},
-                              bounds={'amplitude': (0, sn_amp_init),
-                                      'gamma': (0, 10),
-                                      'alpha': (0, 10)})
-
-    model_init = host_init + sn_init
+    model_init = host_init
 
     # Now initialize all contaminating galaxies
     for g in range(len(contamloc)):
@@ -325,7 +327,7 @@ def gen_contam_model(cutout, fname, cfg):
     # The end_row should be set to the end of the cutout
     # but this can be set to the start_row + some other
     # number of rows that you'd like to see fits for
-    end_row = cutout.shape[0]  # start_row + 10  # cutout.shape[0]
+    end_row = cutout.shape[0]  # start_row + 30  # cutout.shape[0]
 
     # fit thresh
     # sigma_thresh = cfg['sigma_thresh']
@@ -629,10 +631,10 @@ def update_contam_model(cutout, contam_model, contam_par, cfg):
     """
 
     # ---------
-    # Smooth out the host model
+    # Smooth out the contamination model
     for col in range(contam_model.shape[1]):
         current_col = contam_model[:, col]
-        newcol = savgol_filter(current_col, window_length=5, polyorder=3)
+        newcol = savgol_filter(current_col, window_length=8, polyorder=3)
         contam_model[:, col] = newcol
 
     return iter_flag, contam_model, contam_par
@@ -696,9 +698,39 @@ def split_indices(indices, max_length):
     return sub_arrays
 
 
+def run_sextractor(dirimgfname, dry_run=False):
+
+    # set the catalog name
+    cat_filename = 'prismhostsub_cat.txt'
+    sextractor_config_fname = "romanprismhostsub_sextractor_config.txt"
+
+    # print info
+    print(f"{bc.GREEN}" + "Running SExtractor command:\n" + "sex "
+          + dirimgfname + " -c "
+          + sextractor_config_fname +
+          + " -CATALOG_NAME " + os.path.basename(cat_filename)
+          + f"{bc.ENDC}")
+
+    # Use subprocess to call sextractor.
+    # The args passed MUST be passed in this way.
+    # i.e., args that would be separated by a space on the
+    # command line must be passed here separated by commas.
+    # It will not work if you join all of these args in a
+    # string with spaces where they are supposed to be;
+    # even if the command looks right when printed out.
+    if dry_run:
+        subprocess.run(['sex', dirimgfname,
+                        '-c', sextractor_config_fname,
+                        '-CATALOG_NAME',
+                        os.path.basename(cat_filename)], check=True)
+
+    return None
+
+
 if __name__ == '__main__':
 
     # TODO list
+    print(f"{bc.BLUE}")
     print('\nTODO LIST:')
     print('* NOTE: Automate the cropping later. You will need galaxy\n',
           'half-light radius or the a & b elliptical axes from\n',
@@ -722,9 +754,12 @@ if __name__ == '__main__':
           '(i) determine effect of PA on contam gal search.', '\n',
           '(ii) how does the contam gal search change',
           'if the trace is not exactly vertical.')
+    print('* NOTE: Double check the scaling below to go from effective area\n',
+          'units to throughput for the prism and F129 bandpasses.')
     print('* NOTE: Move to testing with HST data once above items are done.\n',
           'One of the tests should be a comparison to what\n',
           'Russell had for Graur et al.')
+    print(f"{bc.ENDC}")
     print('\n')
 
     # ==========================
@@ -810,13 +845,25 @@ if __name__ == '__main__':
 
         # plot
         if cfg['showcutoutplot']:
+            """
+            We like to show both cutouts: direct and dispersed.
+            The dispersed cutout is already made. We are just
+            going to show the corresponding direct image region
+            alongside in the same figure.
+            """
             fig = plt.figure()
             ax = fig.add_subplot(111)
+            # first plot dispersed image cutout
             cax = ax.imshow(np.log10(cutout), origin='lower',
                             vmin=1.2, vmax=2.6)
             cbar = fig.colorbar(cax)
             cbar.set_label('log(pix val)')
-            plt.show()
+
+            # plot corresponding area from direct image.
+
+
+
+            # plt.show()
             fig.savefig(fname.replace('.fits', '_cutout.png'), dpi=200,
                         bbox_inches='tight')
             fig.clear()
@@ -881,7 +928,7 @@ if __name__ == '__main__':
         spec2d = recovered_sn_2d[rs: re + 1, cs: ce + 1]
         sn_1d_spec = np.nanmean(spec2d, axis=1)
 
-        # convert to physical units
+        # convert to physical units. # flam
         et = cfg['spec_img_exptime']
         sn_1d_spec_phys = oned_utils.convert_to_phys_units(spec2d, specwav,
                                                            'DN',
@@ -921,6 +968,28 @@ if __name__ == '__main__':
                     dpi=200, bbox_inches='tight')
         fig.clear()
         plt.close(fig)
+
+        # ==========
+        # Get the f129 implied apparent magnitude based on the SED
+        # that we extracted.
+        # first we need to read in the bandpas
+        print('Getting AB mag based on extracted 1D spectrum...')
+
+        f129_wav = roman_effarea['Wave'] * 1e4
+        scaling = rdef.get_effarea_throughput_scaling()
+        f129_thru = roman_effarea['F129'] * scaling
+
+        f129_mag = gm.get_apparent_mag_noredshift(specwav * 1e4,
+                                                  sn_1d_spec_phys,
+                                                  f129_wav, f129_thru)
+        print('Implied F129 ABmag for SN based on 1D spec:',
+              '{:.2f}'.format(f129_mag))
+
+        f129_mag_input = gm.get_apparent_mag_noredshift(sn_input_wav,
+                                                        sn_input_flux,
+                                                        f129_wav, f129_thru)
+        print('Implied F129 ABmag for SN input spec:',
+              '{:.2f}'.format(f129_mag_input))
 
         # ==========
         # Now plot input and recovered spectra
