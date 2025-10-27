@@ -83,6 +83,9 @@ def get_model_init(model, y_fit, x_fit, xhostloc, contamloc):
 
         model_init += gal_init
 
+    # Now add a low-order polynomial for the background
+
+
     return model_init
 
 
@@ -251,7 +254,12 @@ def get_sn_mask(cfg):
 
 def gen_src_list(cfg):
 
+    # Run SExtractor first
     run_sextractor(cfg)
+
+    # Flag to tell downstream function(s) if this function
+    # has returned RA,DEC or X,Y
+    wcs_coord = False
 
     # Read the catalog SExtractor generated and get the RA,DEC
     cat_filename = datadir + cfg['cat_filename']
@@ -266,16 +274,40 @@ def gen_src_list(cfg):
                  'MAGERR_AUTO']
     cat = np.genfromtxt(cat_filename, dtype=None, names=catheader,
                         encoding='ascii')
-    allgalx = cat['X_IMAGE']
-    allgaly = cat['Y_IMAGE']
 
     # We're using the X,Y for now because for some reason
     # SExtractor isn't getting the RA,DEC right. It does
     # get teh X,Y correct.
+    if wcs_coord:
+        allgalc1 = cat['ALPHA_J2000']
+        allgalc2 = cat['DELTA_J2000']
+    else:
+        allgalc1 = cat['X_IMAGE']
+        allgalc2 = cat['Y_IMAGE']
 
+    # print('SExtractor coords with SN+HOST included:')
+    # print(allgalc1)
+    # print(allgalc2)
+    # print('SN and HOST coords:')
+    # print(xsn, ysn, xhost, yhost)
 
+    # Remove the SN and host from this list. We only want other
+    # potential contaminants.
+    match_idx_sn = np.argmin(np.sqrt((xsn - allgalc1)**2
+                                     + (ysn - allgalc2)**2))
+    match_idx_host = np.argmin(np.sqrt((xhost - allgalc1)**2
+                                       + (yhost - allgalc2)**2))
+    match_idx_list = [match_idx_sn, match_idx_host]
 
-    return allgalra, allgaldec
+    # remove these indices
+    allgalc1 = np.delete(allgalc1, match_idx_list)
+    allgalc2 = np.delete(allgalc2, match_idx_list)
+
+    # print('Returning SExtractor coords with SN+HOST excluded:')
+    # print(allgalc1)
+    # print(allgalc2)
+
+    return allgalc1, allgalc2, wcs_coord
 
 
 def select_contam_gal(fname, cfg):
@@ -294,10 +326,10 @@ def select_contam_gal(fname, cfg):
     assuming a PA=0.0 degrees.
     See TODO list for tasks for this function.
     """
-    contam_gal_ra, contam_gal_dec = gen_src_list(cfg)
+    contam_gal_c1, contam_gal_c2, wcs_coord = gen_src_list(cfg)
 
     # Set up
-    ydifflim = 300  # max exp len of SN + contam gal prism spectrum
+    ydifflim = 300  # max expected len of SN + contam gal prism spectrum
     ymargin = 50  # padding
     # the x difference should be the size of the galaxy in
     # the cross-dispersion direction and user-provided or
@@ -318,15 +350,22 @@ def select_contam_gal(fname, cfg):
     sncoord = SkyCoord(snra, sndec, frame='icrs', unit='deg')
     xsn, ysn = get_obj_img_coords(sncoord, wcs)
 
+    # Loop over all objects
     contam_gal_list = []
-    for i in range(len(contam_gal_ra)):
+    # We want the x,y coordinates relative to the cutout but
+    # this function can handle inputs of RA, DEC or X, Y (image).
+    for i in range(len(contam_gal_c1)):
 
-        galra = contam_gal_ra[i]
-        galdec = contam_gal_dec[i]
-
-        # First convert to (x,y)
-        galcoord = SkyCoord(galra, galdec, frame='icrs', unit='deg')
-        xgal, ygal = get_obj_img_coords(galcoord, wcs)
+        # IF we were given RA,DEC we will need the X,Y image coords first
+        if wcs_coord:
+            galra = contam_gal_c1[i]
+            galdec = contam_gal_c2[i]
+            # Now convert using SkyCoord to (x,y)
+            galcoord = SkyCoord(galra, galdec, frame='icrs', unit='deg')
+            xgal, ygal = get_obj_img_coords(galcoord, wcs)
+        else:
+            xgal = contam_gal_c1[i]
+            ygal = contam_gal_c2[i]
 
         # Now determine if this object is close enough to the SN
         if ((abs(ysn - ygal) <= (ydifflim + ymargin))
@@ -383,9 +422,9 @@ def gen_contam_model(cutout, fname, cfg):
     Then proceed to fitting.
     """
     contam_gal_centers = select_contam_gal(fname, cfg)
-    print('Contaminating galaxy locations that will be fit:')
+    print('Contaminating object locations that will be fit',
+          '(coordinates relative to cutout):')
     print(contam_gal_centers)
-    sys.exit(0)
 
     # ----- loop over all rows
     # Empty array for host model
@@ -803,6 +842,9 @@ if __name__ == '__main__':
           'if the trace is not exactly vertical.')
     print('* NOTE: We are using alpha/delta_J2000 for the SExtractor\n',
           'coordinates and ICRS for the sim images. Is this a problem?')
+    print('* NOTE: When using SExtractor to find contaminants,\n',
+          'we have to exclude the SN+HOST. Write the generic case\n',
+          'for multiple or no matches later within gen_src_list(...) later.')
     print('* NOTE: Double check the scaling below to go from effective area\n',
           'units to throughput for the prism and F129 bandpasses.')
     print('* NOTE: Move to testing with HST data once above items are done.\n',
@@ -933,8 +975,8 @@ if __name__ == '__main__':
 
         # Fit and update
         contam_model, contam_par = gen_contam_model(cutout, fname, cfg)
-        iter_flag, contam_model, host_fit_params = \
-            update_contam_model(cutout, contam_model, contam_par, cfg)
+        # iter_flag, contam_model, host_fit_params = \
+        #     update_contam_model(cutout, contam_model, contam_par, cfg)
 
         # Iterate and test
         """
@@ -977,14 +1019,14 @@ if __name__ == '__main__':
         # print('\n1D-Extraction params:')
         # print('Row start:', rs, 'Row end:', re)
         # print('Col start:', cs, 'Col end:', ce)
-        # print('Wavelengths:', specwav)
-        # print(specwav.shape)
 
         # Collapse to 1D
         # Since we know the location of the SN, we will just
         # use a few pixels around it.
         spec2d = recovered_sn_2d[rs: re + 1, cs: ce + 1]
         sn_1d_spec = np.nanmean(spec2d, axis=1)
+        # print('Isolated 2D and 1D SN spec shapes:')
+        # print(spec2d.shape)
 
         # convert to physical units. # flam
         et = cfg['spec_img_exptime']
@@ -1079,7 +1121,7 @@ if __name__ == '__main__':
 
         ax1.legend(loc=0, fontsize=10)
 
-        ylim_specplot = 1.5e-19
+        ylim_specplot = 7.5e-19
 
         ax1.set_xlim(0.65, 2.0)
         ax1.set_ylim(0, ylim_specplot)
