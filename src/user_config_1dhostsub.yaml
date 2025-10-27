@@ -45,29 +45,28 @@ applysmoothingperrow: False
 # Provide a list even if there is only one name
 # We assume that the host and SN input spectra are the same
 # for the entire file name list provided by the user.
-fname: ['test_2d_multipleGalaxies_WFI_WFI01_FULL_prism_rollAngle060.fits',
-        'test_2d_multipleGalaxies_WFI_WFI01_FULL_prism_rollAngle090.fits',
-        'test_2d_multipleGalaxies_WFI_WFI01_FULL_prism_rollAngle120.fits',
-        'test_2d_multipleGalaxies_WFI_WFI01_FULL_prism_rollAngle180.fits']
+fname: ['test_2d_multipleGalaxies_WFI_WFI01_FULL_prism_rollAngle045.fits']
+# 'test_2d_multipleGalaxies_WFI_WFI01_FULL_prism_rollAngle065.fits',
+# 'test_2d_multipleGalaxies_WFI_WFI01_FULL_prism_rollAngle085.fits',
+# 'test_2d_multipleGalaxies_WFI_WFI01_FULL_prism_rollAngle105.fits']
+
+# The name of the direct image on which we will run our
+# intermediate SExtractor step to detect contaminating galaxies.
+dirimgfname: 'test_2d_multipleGalaxies_WFI_WFI01_FULL_F106_rollAngle045.fits'
 
 # Extension numbers in FITS file
 sciextnum: 1
 
+# SExtractor related
+cat_filename: 'prismhostsub_cat.txt'
+sextractor_config_fname: 'romanprismhostsub_sextractor_config.txt'
+
 # Coordinates
 # SN and host
-snra: 4.08366203
-sndec: -48.42386892
-hostra: 4.084220109
-hostdec: -48.42379077
-
-# Other contaminating object coordinates
-# This is a list of N coordinates for N galaxies
-# whose spectra are potential contaminants.
-# Future Todo: this should be an [N x 3] matrix.
-# N rows for N galaxies
-# and the cols are ra, dec, and cross-dispersion size.
-contam_gal_ra: [4.084861175, 4.081275836, 4.08210659, 4.081545713]
-contam_gal_dec: [-48.42251769, -48.42252404, -48.42375965, -48.42457458]
+snra: 4.082905535
+sndec: -48.42384403
+hostra: 4.083448424
+hostdec: -48.42376935
 
 # Input spectra
 host_spec_fname: 'lfgal.txt'

@@ -21,6 +21,7 @@ prismdir = home + '/Documents/Roman/PIT/prism/'
 hostsubdir = prismdir + 'hostlight_subtraction/'
 datadir = hostsubdir + 'simdata_prism_galsn/'
 utils_dir = hostsubdir + 'roman-prism-hostsub/utils/'
+srccodesdir = hostsubdir + 'roman-prism-hostsub/src/'
 sys.path.append(utils_dir)
 import romanprism_fast_x1d as oned_utils  # noqa
 import get_app_mag as gm  # noqa
@@ -248,15 +249,41 @@ def get_sn_mask(cfg):
     return sn_mask_idx
 
 
+def gen_src_list(cfg):
+
+    run_sextractor(cfg)
+
+    # Read the catalog SExtractor generated and get the RA,DEC
+    cat_filename = datadir + cfg['cat_filename']
+    catheader = ['NUMBER',
+                 'X_IMAGE',
+                 'Y_IMAGE',
+                 'ALPHA_J2000',
+                 'DELTA_J2000',
+                 'FLUX_AUTO',
+                 'FLUXERR_AUTO',
+                 'MAG_AUTO',
+                 'MAGERR_AUTO']
+    cat = np.genfromtxt(cat_filename, dtype=None, names=catheader,
+                        encoding='ascii')
+    allgalx = cat['X_IMAGE']
+    allgaly = cat['Y_IMAGE']
+
+    # We're using the X,Y for now because for some reason
+    # SExtractor isn't getting the RA,DEC right. It does
+    # get teh X,Y correct.
+
+
+
+    return allgalra, allgaldec
+
+
 def select_contam_gal(fname, cfg):
     """
     Get contaminating galaxy coordinates given coordinates of all galaxies
-    in the direct image and the SN coordinate.
-    The user can give either a list of potential contaminating galaxy
-    centers (they can figure this out any way they want) or they
-    can simply provide coordinates of all galaxies and this func
-    will find the contaminants.
-
+    in the direct image and the SN coordinate. This function will run
+    an intermediate SExtractor step to detect objects in the direct
+    image and return those coordinates.
     This function will return contam gal coords in (x,y) relative to
     the cutout coords.
 
@@ -267,8 +294,7 @@ def select_contam_gal(fname, cfg):
     assuming a PA=0.0 degrees.
     See TODO list for tasks for this function.
     """
-    user_contam_gal_ra = cfg['contam_gal_ra']
-    user_contam_gal_dec = cfg['contam_gal_dec']
+    contam_gal_ra, contam_gal_dec = gen_src_list(cfg)
 
     # Set up
     ydifflim = 300  # max exp len of SN + contam gal prism spectrum
@@ -293,10 +319,10 @@ def select_contam_gal(fname, cfg):
     xsn, ysn = get_obj_img_coords(sncoord, wcs)
 
     contam_gal_list = []
-    for i in range(len(user_contam_gal_ra)):
+    for i in range(len(contam_gal_ra)):
 
-        galra = user_contam_gal_ra[i]
-        galdec = user_contam_gal_dec[i]
+        galra = contam_gal_ra[i]
+        galdec = contam_gal_dec[i]
 
         # First convert to (x,y)
         galcoord = SkyCoord(galra, galdec, frame='icrs', unit='deg')
@@ -359,6 +385,7 @@ def gen_contam_model(cutout, fname, cfg):
     contam_gal_centers = select_contam_gal(fname, cfg)
     print('Contaminating galaxy locations that will be fit:')
     print(contam_gal_centers)
+    sys.exit(0)
 
     # ----- loop over all rows
     # Empty array for host model
@@ -698,18 +725,35 @@ def split_indices(indices, max_length):
     return sub_arrays
 
 
-def run_sextractor(dirimgfname, dry_run=False):
+def run_sextractor(cfg, dry_run=False):
+    """
+    SExtractor is run in an "aggressive deblending" mode --
+    this ends up causing larger sources to be deblended more.
+    While this is not physically correct, we use the SExtractor
+    output to ensure that bright sources within individual galaxies
+    such as HII-regions will be fit separately. This helps fit the
+    bright contaminating sources better in our direct subtraction.
+    It also has the benefit of accouting for spatially varying
+    spectra within a galaxy albeit in a crude manner.
+    """
+
+    # get the direct image to run on from the config
+    dirimgfname = cfg['dirimgfname']
+    # change the direct image name to just iclude the sci extention
+    dirimgfname = dirimgfname + '[' + str(cfg['sciextnum']) + ']'
 
     # set the catalog name
-    cat_filename = 'prismhostsub_cat.txt'
-    sextractor_config_fname = "romanprismhostsub_sextractor_config.txt"
+    cat_filename = datadir + cfg['cat_filename']
+    sextractor_config_fname = datadir + cfg['sextractor_config_fname']
+
+    # Change directory to where teh direct image is
+    os.chdir(datadir)
 
     # print info
-    print(f"{bc.GREEN}" + "Running SExtractor command:\n" + "sex "
-          + dirimgfname + " -c "
-          + sextractor_config_fname +
-          + " -CATALOG_NAME " + os.path.basename(cat_filename)
-          + f"{bc.ENDC}")
+    print(f"{bc.GREEN}", "Running SExtractor command:\n",
+          "sex", dirimgfname, "-c", sextractor_config_fname,
+          "-CATALOG_NAME", os.path.basename(cat_filename),
+          f"{bc.RESET}")
 
     # Use subprocess to call sextractor.
     # The args passed MUST be passed in this way.
@@ -718,11 +762,14 @@ def run_sextractor(dirimgfname, dry_run=False):
     # It will not work if you join all of these args in a
     # string with spaces where they are supposed to be;
     # even if the command looks right when printed out.
-    if dry_run:
+    if not dry_run:
         subprocess.run(['sex', dirimgfname,
                         '-c', sextractor_config_fname,
                         '-CATALOG_NAME',
                         os.path.basename(cat_filename)], check=True)
+
+    # Change directory back to code
+    os.chdir(srccodesdir)
 
     return None
 
@@ -754,12 +801,14 @@ if __name__ == '__main__':
           '(i) determine effect of PA on contam gal search.', '\n',
           '(ii) how does the contam gal search change',
           'if the trace is not exactly vertical.')
+    print('* NOTE: We are using alpha/delta_J2000 for the SExtractor\n',
+          'coordinates and ICRS for the sim images. Is this a problem?')
     print('* NOTE: Double check the scaling below to go from effective area\n',
           'units to throughput for the prism and F129 bandpasses.')
     print('* NOTE: Move to testing with HST data once above items are done.\n',
           'One of the tests should be a comparison to what\n',
           'Russell had for Graur et al.')
-    print(f"{bc.ENDC}")
+    print(f"{bc.RESET}")
     print('\n')
 
     # ==========================
@@ -785,7 +834,15 @@ if __name__ == '__main__':
     host_spec_fname = datadir + cfg['host_spec_fname']
     sn_spec_fname = datadir + cfg['sn_spec_fname']
     host_input_wav, host_input_flux = np.loadtxt(host_spec_fname, unpack=True)
+
     sn_input_wav, sn_input_flux = np.loadtxt(sn_spec_fname, unpack=True)
+    # this spectrum was scaled when input into the datacube for this sim
+    # it is scaled differently depending on the SN mag required for the sim
+    # so check this number in the multigalaxysim.ipynb notebook.
+    # we should probably save the scaled SN spectrum that was inserted
+    # instead of copy-pasting from the NB.
+    snsedscaling = 9.485776713818842
+    sn_input_flux *= snsedscaling
 
     fname_list = cfg['fname']
     for fname in fname_list:
@@ -814,11 +871,11 @@ if __name__ == '__main__':
         prismdata = prismimg[sciextnum].data
 
         # Need WCS before getting contaminating obj locations
+        """
         wcs = WCS(fits.getheader(datadir + fname, ext=sciextnum))
 
         # Get coordinates for potential contaminating objects
-        contam_gal_ra = cfg['contam_gal_ra']
-        contam_gal_dec = cfg['contam_gal_dec']
+        contam_gal_ra, contam_gal_dec = gen_src_list(cfg)
         # Now convert to x and y locations of contaminants
         xcontam = []
         ycontam = []
@@ -829,6 +886,7 @@ if __name__ == '__main__':
             xcc, ycc = get_obj_img_coords(ccoord, wcs)
             xcontam.append(xcc)
             ycontam.append(ycc)
+        """
 
         # get cutout size config
         cs_x = cfg['cutoutsize_x']

@@ -1,14 +1,18 @@
 
 class bcolors:
-    # This class came from stackoverflow
-    # SEE:
-    # https://stackoverflow.com/questions/287871/how-to-print-colored-text-in-python
-    HEADER = '\033[95m'
+    """
+    Class def for getting colorful output on terminal.
+    """
+
+    PINK = '\033[95m'
     BLUE = '\033[94m'
     CYAN = '\033[96m'
     GREEN = '\033[92m'
-    WARNING = '\033[93m'
-    FAIL = '\033[91m'
-    ENDC = '\033[0m'
+    RED = '\033[91m'
+
+    WARNING = '\033[93m'  # this is a bright yellow
+
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
+
+    RESET = '\033[0m'
