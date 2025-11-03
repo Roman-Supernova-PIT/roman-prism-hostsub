@@ -15,6 +15,9 @@ import os
 from pprint import pprint
 import yaml
 import subprocess
+import time
+
+start = time.time()
 
 home = os.getenv('HOME')
 prismdir = home + '/Documents/Roman/PIT/prism/'
@@ -29,7 +32,7 @@ from bcolors import bcolors as bc  # noqa
 import romanprismdefs as rdef  # noqa
 
 
-def get_model_init(model, y_fit, x_fit, xhostloc, contamloc):
+def get_model_init(ymax, xhostloc, contamloc):
 
     # if model == 'sersic':
     #     # Initial guesses
@@ -46,16 +49,17 @@ def get_model_init(model, y_fit, x_fit, xhostloc, contamloc):
 
     # First initialize the host model
     # Initial guess: amplitude=max(y), x_0 at peak, gamma=1, alpha=1.5
-    amplitude_init = y_fit.max()
+    amplitude_init = ymax
     x_0_init = xhostloc
     gamma_init = 5
     alpha_init = 1.5
 
+    x0bounds = (x_0_init-1, x_0_init+1)
     host_init = models.Moffat1D(amplitude=amplitude_init, x_0=x_0_init,
                                 gamma=gamma_init, alpha=alpha_init,
-                                fixed={'x_0': True},
                                 bounds={'amplitude': (0, amplitude_init),
-                                        'gamma': (0, 10),
+                                        'x_0': x0bounds,
+                                        'gamma': (0, 5),
                                         'alpha': (0, 10)})
 
     # NOw the SN
@@ -72,19 +76,23 @@ def get_model_init(model, y_fit, x_fit, xhostloc, contamloc):
 
     # Now initialize all contaminating galaxies
     for g in range(len(contamloc)):
-        gal_amp_init = y_fit.max()
+        gal_amp_init = ymax
         gal_x0_init = contamloc[g][0]
+        # set x0 bounds
+        # we want central loc within a pixel
+        # this is because we converted fractional pixels in image X,Y
+        # coordinates to integer values relative to cutout coords.
+        x0bounds = (gal_x0_init-1, gal_x0_init+1)
         gal_init = models.Moffat1D(amplitude=gal_amp_init, x_0=gal_x0_init,
                                    gamma=gamma_init, alpha=alpha_init,
-                                   fixed={'x_0': True},
                                    bounds={'amplitude': (0, gal_amp_init),
-                                           'gamma': (0, 10),
+                                           'x_0': x0bounds,
+                                           'gamma': (0, 5),
                                            'alpha': (0, 10)})
 
         model_init += gal_init
 
     # Now add a low-order polynomial for the background
-
 
     return model_init
 
@@ -131,7 +139,8 @@ def prep_fit(cfg, y, x=None, mask=None):
     return x_fit, y_fit, prep_flag
 
 
-def fit_1d(y_fit, x_fit, contamloc, xhostloc=50, model=None, row_idx=None):
+def fit_1d(y_fit, x_fit, model_init, xhostloc=50,
+           row_idx=None):
     """
     Fit Moffat or Sersic profiles to 1D data using astropy.
 
@@ -142,8 +151,6 @@ def fit_1d(y_fit, x_fit, contamloc, xhostloc=50, model=None, row_idx=None):
     Returns:
         fitted_model: The best-fit astropy model.
     """
-
-    model_init = get_model_init(model, y_fit, x_fit, xhostloc, contamloc)
 
     fit = fitting.TRFLSQFitter()
     try:
@@ -241,7 +248,7 @@ def get_sn_mask(cfg):
     cs_x = cfg['cutoutsize_x']
     # galmaskpad = cfg['galmaskpad']
     sn_mask_idx = np.arange(int(cs_x/2) - snmaskpad,
-                            int(cs_x/2) + snmaskpad)
+                            int(cs_x/2) + snmaskpad + 1)
     # mask the galaxy
     # print('Host cutout center idx:', cutout_host_x)
     # gal_mask_idx = np.arange(cutout_host_x - galmaskpad,
@@ -392,7 +399,7 @@ def gen_contam_model(cutout, fname, cfg):
     # The end_row should be set to the end of the cutout
     # but this can be set to the start_row + some other
     # number of rows that you'd like to see fits for
-    end_row = cutout.shape[0]  # start_row + 30  # cutout.shape[0]
+    end_row = cutout.shape[0]  # start_row + 120  # cutout.shape[0]
 
     # fit thresh
     # sigma_thresh = cfg['sigma_thresh']
@@ -426,6 +433,13 @@ def gen_contam_model(cutout, fname, cfg):
           '(coordinates relative to cutout):')
     print(contam_gal_centers)
 
+    # ----- Initialize the model
+    # This is only done once because it is computationally expensive. Also,
+    # because we don't really need to change it for each row being fit.
+    # Get the args needed to initialize
+    ymax = np.nanmax(cutout)
+    model_init = get_model_init(ymax, cutout_host_x, contam_gal_centers)
+
     # ----- loop over all rows
     # Empty array for host model
     contam_model = np.zeros_like(cutout)
@@ -442,6 +456,23 @@ def gen_contam_model(cutout, fname, cfg):
         if applysmoothing:
             profile_pix = savgol_filter(profile_pix, window_length=5,
                                         polyorder=2)
+
+        # ----- Try window smoothing in the vertical dir, if user requested
+        applystack = cfg['applystack']
+        if applystack:
+            halfrowstostack = cfg['stackrows'] // 2
+            if i < (cutout.shape[0] - halfrowstostack + 1):
+                profile_pix = np.nanmean(cutout[i - halfrowstostack:
+                                                i + halfrowstostack + 1],
+                                         axis=0)
+                if verbose:
+                    print('Stacking rows prior to fitting:',
+                          i - halfrowstostack, 'to', i + halfrowstostack)
+            else:
+                profile_pix = np.nanmean(cutout[i - halfrowstostack:], axis=0)
+                if verbose:
+                    print('Stacking rows prior to fitting:',
+                          i - halfrowstostack, 'to', cutout.shape[0])
 
         # ----- Skipping criterion
         """
@@ -461,7 +492,7 @@ def gen_contam_model(cutout, fname, cfg):
 
         # ------ Proceed to fitting
         xfit, yfit, pflag = prep_fit(cfg, profile_pix, xarr, mask=sn_mask_idx)
-        contam_fit = fit_1d(yfit, xfit, contam_gal_centers,
+        contam_fit = fit_1d(yfit, xfit, model_init,
                             xhostloc=cutout_host_x, row_idx=i)
 
         # OLD code when SN and HOST were fit separately
@@ -498,7 +529,7 @@ def gen_contam_model(cutout, fname, cfg):
             ax1 = fig.add_subplot(311)
             ax2 = fig.add_subplot(312)
             # plot points and fit
-            ax1.plot(xarr, profile_pix, 'o', markersize=4, color='k')
+            ax1.plot(xarr, profile_pix, 'o', markersize=3, color='k')
             # ax1.set_yscale('log')
             ax1.plot(xarr, contam_fit(xarr), color='orange',
                      label='Contam fit. Row: ' + str(i))
@@ -1092,6 +1123,13 @@ if __name__ == '__main__':
               '{:.2f}'.format(f129_mag_input))
 
         # ==========
+        # Save the SN residual as a fits file if you need to check in ds9
+        if cfg['savesncutout']:
+            sncutouthdu = fits.PrimaryHDU(data=recovered_sn_2d)
+            sncutouthdu.writeto(fname.replace('.fits', '_snonly.fits'),
+                                overwrite=True)
+
+        # ==========
         # Now plot input and recovered spectra
         fig = plt.figure(figsize=(6, 4))
         gs = GridSpec(10, 5, hspace=0.05, wspace=0.05,
@@ -1115,16 +1153,17 @@ if __name__ == '__main__':
                  color='mediumseagreen', label='Input SN spec')
 
         # Also plot the SN spectrum without host contamination subtracted
-        # ax1.plot(specwav, sn_1d_phys_host, '-',
-        #          color='slategray', lw=1.5,
-        #          label='SN spec without host\n' + 'contam. subtracted')
+        ax1.plot(specwav, sn_1d_phys_host, '-',
+                 color='slategray', lw=1.5,
+                 label='SN spec without host\n' + 'contam. subtracted')
 
         ax1.legend(loc=0, fontsize=10)
 
-        ylim_specplot = 7.5e-19
+        # ylim_specplot = 7.5e-19
 
         ax1.set_xlim(0.65, 2.0)
-        ax1.set_ylim(0, ylim_specplot)
+        # ax1.set_ylim(0, ylim_specplot)
+        ax1.set_yscale('log')
 
         ax1.set_xticklabels([])
 
@@ -1146,5 +1185,8 @@ if __name__ == '__main__':
 
         # Close image
         prismimg.close()
+
+    print("total time taken:",
+          '{:.2f}'.format(time.time() - start), "seconds.")
 
     sys.exit(0)

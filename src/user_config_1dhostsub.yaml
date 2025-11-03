@@ -11,20 +11,19 @@ donotmask: False
 # Minimum number of pixels in a row above 3-sigma to fit a profile
 # These have to be contiguous
 # i.e., these are sigma_thresh above the background
-numpix_fit_thresh: 4
+numpix_fit_thresh: 5
 
 # Sigma threshold for the pixels to be considered
-sigma_thresh: 2.0
+sigma_thresh: 3.0
 
 # max iterations for fitting
 # max_iter: 10
 
 # user guess for starting row at which real signal
 # for the host galaxy starts
-start_row: 30
+start_row: 50
 
 # Pads for masking SN and host
-galmaskpad: 2
 snmaskpad: 4
 
 # Cutout size
@@ -39,7 +38,9 @@ cutoutsize_x: 100
 spec_img_exptime: 900  # seconds
 
 # Smooth before fitting
-applysmoothingperrow: False
+applysmoothingperrow: False  # smooth data on each row
+applystack: True  # stack the number of rows given below like a moving window filter
+stackrows: 6
 
 # File name
 # Provide a list even if there is only one name
@@ -74,11 +75,16 @@ sn_spec_fname: 'lfnana.txt'
 
 # For 1D extraction
 # This is usually just for the SN
-obj_one_sided_width: 3
+obj_one_sided_width: 2
 
 # starting and ending wavelengths for x1d
 start_wav: 0.7
 end_wav: 1.8
+
+# Save the final SN residual cutout as a fits file
+# this is a diagnostic keyword. Only set to True if
+# you need to check the SN cutout in DS9.
+savesncutout: True
 
 # Runtime config
 verbose: True
