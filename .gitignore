@@ -9,3 +9,6 @@ wheels/
 # Virtual environments
 .venv
 *.png
+*.fits
+*.fits
+.DS_Store

@@ -19,12 +19,20 @@ import time
 
 start = time.time()
 
-home = os.getenv('HOME')
-prismdir = home + '/Documents/Roman/PIT/prism/'
-hostsubdir = prismdir + 'hostlight_subtraction/'
-datadir = hostsubdir + 'simdata_prism_galsn/'
-utils_dir = hostsubdir + 'roman-prism-hostsub/utils/'
-srccodesdir = hostsubdir + 'roman-prism-hostsub/src/'
+# ==========================
+# Get configuration
+config_flname = 'user_config_1dhostsub.yaml'
+with open(config_flname, 'r') as fh:
+    cfg = yaml.safe_load(fh)
+print('Received the following configuration from the user:')
+pprint(cfg)
+
+home = cfg['paths']['home']
+prismdir = home + cfg['paths']['prismdir']
+hostsubdir = prismdir + cfg['paths']['hostsubdir']
+datadir = hostsubdir + cfg['paths']['datadir']
+srccodesdir = hostsubdir + cfg['paths']['srccodesdir']
+utils_dir = hostsubdir + cfg['paths']['utilsdir']
 sys.path.append(utils_dir)
 import romanprism_fast_x1d as oned_utils  # noqa
 import get_app_mag as gm  # noqa
@@ -59,20 +67,21 @@ def get_model_init(ymax, xhostloc, contamloc):
                                 gamma=gamma_init, alpha=alpha_init,
                                 bounds={'amplitude': (0, amplitude_init),
                                         'x_0': x0bounds,
-                                        'gamma': (0, 5),
+                                        'gamma': (0, 10),
                                         'alpha': (0, 10)})
 
     # NOw the SN
-    # sn_amp_init = y_fit.max() / 2
-    # sn_x0_init = 50
-    # sn_init = models.Moffat1D(amplitude=sn_amp_init, x_0=sn_x0_init,
-    #                           gamma=gamma_init, alpha=alpha_init,
-    #                           fixed={'x_0': True},
-    #                           bounds={'amplitude': (0, sn_amp_init),
-    #                                   'gamma': (0, 10),
-    #                                   'alpha': (0, 10)})
+    sn_amp_init = ymax/2
+    sn_x0_init = 50
+    snx0bounds = (sn_x0_init-1, sn_x0_init+1)
+    sn_init = models.Moffat1D(amplitude=sn_amp_init, x_0=sn_x0_init,
+                              gamma=gamma_init, alpha=alpha_init,
+                              bounds={'amplitude': (0, sn_amp_init*2),
+                                      'x_0': snx0bounds,
+                                      'gamma': (0, 5),
+                                      'alpha': (0, 2)})
 
-    model_init = host_init
+    model_init = host_init + sn_init
 
     # Now initialize all contaminating galaxies
     for g in range(len(contamloc)):
@@ -87,7 +96,7 @@ def get_model_init(ymax, xhostloc, contamloc):
                                    gamma=gamma_init, alpha=alpha_init,
                                    bounds={'amplitude': (0, gal_amp_init),
                                            'x_0': x0bounds,
-                                           'gamma': (0, 5),
+                                           'gamma': (0, 10),
                                            'alpha': (0, 10)})
 
         model_init += gal_init
@@ -295,9 +304,9 @@ def gen_src_list(cfg):
     # print('SExtractor coords with SN+HOST included:')
     # print(allgalc1)
     # print(allgalc2)
+
     # print('SN and HOST coords:')
     # print(xsn, ysn, xhost, yhost)
-
     # Remove the SN and host from this list. We only want other
     # potential contaminants.
     match_idx_sn = np.argmin(np.sqrt((xsn - allgalc1)**2
@@ -394,13 +403,6 @@ def gen_contam_model(cutout, fname, cfg):
     # sn_model_to_fit = 'moffat'
 
     # ----- Get user config values needed
-    start_row = cfg['start_row']
-    # You can change end row here for diagnostic purposes
-    # The end_row should be set to the end of the cutout
-    # but this can be set to the start_row + some other
-    # number of rows that you'd like to see fits for
-    end_row = cutout.shape[0]  # start_row + 120  # cutout.shape[0]
-
     # fit thresh
     # sigma_thresh = cfg['sigma_thresh']
     # numpix_fit_thresh = cfg['numpix_fit_thresh']
@@ -440,11 +442,14 @@ def gen_contam_model(cutout, fname, cfg):
     ymax = np.nanmax(cutout)
     model_init = get_model_init(ymax, cutout_host_x, contam_gal_centers)
 
+    # print SN mask info
+    print('SN mask indices:', sn_mask_idx[0], sn_mask_idx[-1])
+
     # ----- loop over all rows
     # Empty array for host model
     contam_model = np.zeros_like(cutout)
-    # Dict for params
-    contam_fit_params = {}
+    # Dict for SN model params
+    sn_fit_params = {}
 
     for i in range(start_row, end_row):
         if verbose:
@@ -491,7 +496,8 @@ def gen_contam_model(cutout, fname, cfg):
         """
 
         # ------ Proceed to fitting
-        xfit, yfit, pflag = prep_fit(cfg, profile_pix, xarr, mask=sn_mask_idx)
+        # We're not masking the SN or anything else anymore
+        xfit, yfit, pflag = prep_fit(cfg, profile_pix, xarr, mask=None)
         contam_fit = fit_1d(yfit, xfit, model_init,
                             xhostloc=cutout_host_x, row_idx=i)
 
@@ -522,34 +528,89 @@ def gen_contam_model(cutout, fname, cfg):
 
         if cfg['showfit']:
             print('----------------')
-            print('Contamination fit result:')
+            # print('Contamination fit result:')
+            # print(contam_fit)
+            print('SN fit result:')
+            print(contam_fit[1])
             print(contam_fit)
 
             fig = plt.figure(figsize=(7, 5))
             ax1 = fig.add_subplot(311)
             ax2 = fig.add_subplot(312)
+            ax3 = fig.add_subplot(313)
             # plot points and fit
             ax1.plot(xarr, profile_pix, 'o', markersize=3, color='k')
             # ax1.set_yscale('log')
             ax1.plot(xarr, contam_fit(xarr), color='orange',
-                     label='Contam fit. Row: ' + str(i))
+                     label='Contam fit. Row (numpy coord): ' + str(i))
             ax1.legend(loc=0)
 
             # plot SN residuals
-            ax2.scatter(xarr, profile_pix - contam_fit(xarr), s=5, c='k',
-                        label='Residuals after removing contam fit')
+            fitresiduals = profile_pix - contam_fit(xarr)
+            ax2.scatter(xarr, fitresiduals, s=5, c='k')
+            # label='Residuals after removing contam fit')
             ax2.legend(loc=0)
             # plot SN mask
-            ax2.axvspan(sn_mask_idx[0], sn_mask_idx[-1], alpha=0.3,
-                        color='gray')
+            # ax2.axvspan(sn_mask_idx[0], sn_mask_idx[-1], alpha=0.3,
+            #             color='gray')
+            ax2.axhline(y=0.0, ls='--', lw=0.5, color='gray')
+
+            # PLot residual statistics
+            rightstd = np.std(fitresiduals[sn_mask_idx[-1]+1:])
+            leftstd = np.std(fitresiduals[:sn_mask_idx[0]])
+            leftmean = np.mean(fitresiduals[:sn_mask_idx[0]])
+            rightmean = np.mean(fitresiduals[sn_mask_idx[-1]+1:])
+            ax2.text(x=0.02, y=0.85,
+                     s='Right std: ' + '{:.2f}'.format(rightstd),
+                     transform=ax2.transAxes)
+            ax2.text(x=0.02, y=0.73,
+                     s='Left std: ' + '{:.2f}'.format(leftstd),
+                     transform=ax2.transAxes)
+            ax2.text(x=0.25, y=0.85,
+                     s='Right mean: ' + '{:.2f}'.format(rightmean),
+                     transform=ax2.transAxes)
+            ax2.text(x=0.25, y=0.73,
+                     s='Left mean: ' + '{:.2f}'.format(leftmean),
+                     transform=ax2.transAxes)
+
+            ax2.axhline(y=rightmean, ls='--', lw=1.5, color='orchid',
+                        xmin=sn_mask_idx[-1]/cutout.shape[1], xmax=1)
+            ax2.axhline(y=rightmean+rightstd, ls='--',
+                        lw=1.5, color='purple',
+                        xmin=sn_mask_idx[-1]/cutout.shape[1], xmax=1)
+            ax2.axhline(y=rightmean-rightstd, ls='--',
+                        lw=1.5, color='purple',
+                        xmin=sn_mask_idx[-1]/cutout.shape[1], xmax=1)
+
+            ax2.axhline(y=leftmean, ls='--', lw=1.5, color='lime',
+                        xmin=0, xmax=sn_mask_idx[0]/cutout.shape[1])
+            ax2.axhline(y=leftmean+leftstd, ls='--',
+                        lw=1.5, color='seagreen', xmin=0,
+                        xmax=sn_mask_idx[0]/cutout.shape[1])
+            ax2.axhline(y=leftmean-leftstd, ls='--',
+                        lw=1.5, color='seagreen', xmin=0,
+                        xmax=sn_mask_idx[0]/cutout.shape[1])
+
+            # Also plot the span for the SN 1D spec extraction
+            one_sided_width = cfg['obj_one_sided_width']
+            ax2.axvspan(int(cs_x/2) - one_sided_width,
+                        int(cs_x/2) + one_sided_width,
+                        alpha=0.5, color='seagreen')
+
+            # plot just the SN model in the third panel
+            ax3.plot(xarr, contam_fit[1](xarr), color='r', label='SN only fit')
+            ax3.legend(loc=0)
 
             plt.show()
             fig.clear()
             plt.close(fig)
 
-        # Save the host fit model
+        # Save the contamination fit model
         contam_model_row = contam_fit(xarr)
         contam_model[i] = contam_model_row
+
+        # Save just the SN fitting parameters
+        sn_fit_params[str(i)] = contam_fit[1]
 
         # Save individual fit params
         # host_fit_params['Row' + str(i) + '-amp'] = contam_fit.amplitude.value
@@ -557,7 +618,7 @@ def gen_contam_model(cutout, fname, cfg):
         # host_fit_params['Row' + str(i) + '-gamma'] = contam_fit.gamma.value
         # host_fit_params['Row' + str(i) + '-alpha'] = contam_fit.alpha.value
 
-    return contam_model, contam_fit_params
+    return contam_model, sn_fit_params
 
 
 def update_contam_model(cutout, contam_model, contam_par, cfg):
@@ -844,6 +905,45 @@ def run_sextractor(cfg, dry_run=False):
     return None
 
 
+def get_contam_sn_models(sn_fit, contam_model, shp):
+    """
+    This function just separates the contamination model
+    from the SN. The gen_contam_model actually fits everything
+    so we need to separate the SN from the rest of the model
+    in here.
+    """
+    # Initialize empty arrays
+    sn_2d = np.zeros(shp)
+    contam_2d = np.zeros(shp)
+
+    # The fitted model for the SN needs to evaluated at each row
+    for i in range(start_row, end_row):
+        row_model = sn_fit[str(i)]
+        # Get the evaluated values for just the SN
+        sn_row_val = row_model(xarr)
+        sn_2d[i] = sn_row_val
+
+        # Get the evaluated values for just the contamination
+        contam_2d[i] = contam_model[i] - sn_row_val
+
+    return sn_2d, contam_2d
+
+
+def get_sn_model_avg_center(sn_fit):
+
+    allcencols = []
+    for rowkey in sn_fit:
+        sn_fit_row = sn_fit[rowkey]
+        cencol = sn_fit_row.x_0.value
+        allcencols.append(cencol)
+        # print('row and x0:', rowkey, cencol)
+
+    avg_sn_cen_col = np.rint(np.mean(allcencols))
+    # print('avg cen pix for SN spectrum:', avg_sn_cen_col)
+
+    return avg_sn_cen_col
+
+
 if __name__ == '__main__':
 
     # TODO list
@@ -885,13 +985,6 @@ if __name__ == '__main__':
     print('\n')
 
     # ==========================
-    # Get configuration
-    config_flname = 'user_config_1dhostsub.yaml'
-    with open(config_flname, 'r') as fh:
-        cfg = yaml.safe_load(fh)
-
-    print('Received the following configuration from the user:')
-    pprint(cfg)
     # ==========================
 
     # Read in the effective area curve for the prism
@@ -993,7 +1086,6 @@ if __name__ == '__main__':
             # plot corresponding area from direct image.
 
 
-
             # plt.show()
             fig.savefig(fname.replace('.fits', '_cutout.png'), dpi=200,
                         bbox_inches='tight')
@@ -1001,11 +1093,19 @@ if __name__ == '__main__':
             plt.close(fig)
 
         # ==========================
+        # Get the starting and ending rows to fit before fitting
+        start_row = cfg['start_row']
+        # You can change end row here for diagnostic purposes
+        # The end_row should be set to the end of the cutout
+        # but this can be set to the start_row + some other
+        # number of rows that you'd like to see fits for
+        end_row = start_row + 50  # start_row + 20  # cutout.shape[0]
+
         # Now fit the profile
         xarr = np.arange(cs_x)
 
         # Fit and update
-        contam_model, contam_par = gen_contam_model(cutout, fname, cfg)
+        contam_model, sn_par = gen_contam_model(cutout, fname, cfg)
         # iter_flag, contam_model, host_fit_params = \
         #     update_contam_model(cutout, contam_model, contam_par, cfg)
 
@@ -1028,14 +1128,15 @@ if __name__ == '__main__':
 
         # ==========================
         # Get the SN spectrum
-        recovered_sn_2d = cutout - contam_model
+        recovered_sn_2d, contam_2d = get_contam_sn_models(sn_par, contam_model,
+                                                          cutout.shape)
 
         imghdr = prismimg[sciextnum].header
         wcs = WCS(imghdr)
         # WCS unused if coordtype is 'pix'.
         # The object X, Y are the center of the cutout
         # and the 1.55 micron row index.
-        obj_x = int(cs_x/2)
+        obj_x = get_sn_model_avg_center(sn_par)
         obj_y = cutout.shape[0] - cs_y_hi
         # print(obj_x, obj_y)
         # Extraction params from config
@@ -1047,9 +1148,9 @@ if __name__ == '__main__':
                                                              coordtype='pix',
                                                              start_wav=swav,
                                                              end_wav=ewav)
-        # print('\n1D-Extraction params:')
-        # print('Row start:', rs, 'Row end:', re)
-        # print('Col start:', cs, 'Col end:', ce)
+        print('\n1D-Extraction params:')
+        print('Row start:', rs, 'Row end:', re)
+        print('Col start:', cs, 'Col end:', ce)
 
         # Collapse to 1D
         # Since we know the location of the SN, we will just
@@ -1088,7 +1189,7 @@ if __name__ == '__main__':
         ax1.imshow(np.log10(cutout), origin='lower', vmin=1.5, vmax=2.5)
         ax1.set_title('Original image cutout')
 
-        ax2.imshow(np.log10(contam_model), origin='lower', vmin=1.5, vmax=2.5)
+        ax2.imshow(np.log10(contam_2d), origin='lower', vmin=1.5, vmax=2.5)
         ax2.set_title('File: ' + fname + '\n' + 'Contamination model')
 
         ax3.imshow(np.log10(recovered_sn_2d), origin='lower',
@@ -1096,7 +1197,7 @@ if __name__ == '__main__':
         ax3.set_title('SN residual')
 
         fig.savefig(fname.replace('.fits', '_2dparamfit.png'),
-                    dpi=200, bbox_inches='tight')
+                    dpi=300, bbox_inches='tight')
         fig.clear()
         plt.close(fig)
 
@@ -1129,6 +1230,11 @@ if __name__ == '__main__':
             sncutouthdu.writeto(fname.replace('.fits', '_snonly.fits'),
                                 overwrite=True)
 
+            # Also save the model image
+            modelhdu = fits.PrimaryHDU(data=contam_2d)
+            modelhdu.writeto(fname.replace('.fits', '_contammodel.fits'),
+                             overwrite=True)
+
         # ==========
         # Now plot input and recovered spectra
         fig = plt.figure(figsize=(6, 4))
@@ -1141,8 +1247,9 @@ if __name__ == '__main__':
         ax1.set_ylabel('Flam [erg/s/cm2/Angstrom]')
         ax2.set_ylabel('Residuals')
 
+        # Try to get the host spectrum
         host_smaller_cutout = \
-            contam_model[:, cutout_host_x - 25:cutout_host_x + 25]
+            contam_2d[:, cutout_host_x - 25:cutout_host_x + 25]
         host_rec_flux = np.mean(host_smaller_cutout, axis=1)
 
         sn_input_wav_microns = sn_input_wav/1e4
@@ -1157,12 +1264,12 @@ if __name__ == '__main__':
                  color='slategray', lw=1.5,
                  label='SN spec without host\n' + 'contam. subtracted')
 
-        ax1.legend(loc=0, fontsize=10)
+        ax1.legend(loc='upper right', fontsize=10)
 
-        # ylim_specplot = 7.5e-19
+        ylim_specplot = 7.5e-19
 
         ax1.set_xlim(0.65, 2.0)
-        # ax1.set_ylim(0, ylim_specplot)
+        ax1.set_ylim(1e-20, ylim_specplot)
         ax1.set_yscale('log')
 
         ax1.set_xticklabels([])

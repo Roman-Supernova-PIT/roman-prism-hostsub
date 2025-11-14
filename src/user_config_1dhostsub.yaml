@@ -1,7 +1,7 @@
 ---
 # Plotting
 showcutoutplot: False
-showfit: False
+showfit: True
 show_stack_fit: False
 
 # use this flag to not mask anything
@@ -21,7 +21,7 @@ sigma_thresh: 3.0
 
 # user guess for starting row at which real signal
 # for the host galaxy starts
-start_row: 50
+start_row: 150
 
 # Pads for masking SN and host
 snmaskpad: 4
@@ -42,13 +42,23 @@ applysmoothingperrow: False  # smooth data on each row
 applystack: True  # stack the number of rows given below like a moving window filter
 stackrows: 6
 
-# File name
+# Paths for data
+paths:
+  home: '/Users/baj'
+  prismdir: '/Documents/Roman/PIT/prism/'
+  hostsubdir: 'hostlight_subtraction/'
+  datadir: 'simdata_prism_galsn/'
+  srccodesdir: 'roman-prism-hostsub/src/'
+  utilsdir: 'roman-prism-hostsub/utils/'
+
+# File names
 # Provide a list even if there is only one name
 # We assume that the host and SN input spectra are the same
 # for the entire file name list provided by the user.
-fname: ['test_2d_multipleGalaxies_WFI_WFI01_FULL_prism_rollAngle045.fits']
+fname: ['test_2d_multipleGalaxies_WFI_WFI01_FULL_prism_rollAngle065.fits']
+# ['test_2d_multipleGalaxies_WFI_WFI01_FULL_prism_rollAngle045.fits',
 # 'test_2d_multipleGalaxies_WFI_WFI01_FULL_prism_rollAngle065.fits',
-# 'test_2d_multipleGalaxies_WFI_WFI01_FULL_prism_rollAngle085.fits',
+#'test_2d_multipleGalaxies_WFI_WFI01_FULL_prism_rollAngle085.fits',
 # 'test_2d_multipleGalaxies_WFI_WFI01_FULL_prism_rollAngle105.fits']
 
 # The name of the direct image on which we will run our
@@ -74,8 +84,9 @@ host_spec_fname: 'lfgal.txt'
 sn_spec_fname: 'lfnana.txt'
 
 # For 1D extraction
+# in pix
 # This is usually just for the SN
-obj_one_sided_width: 2
+obj_one_sided_width: 3
 
 # starting and ending wavelengths for x1d
 start_wav: 0.7
