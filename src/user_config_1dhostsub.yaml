@@ -1,7 +1,7 @@
 ---
 # Plotting
 showcutoutplot: False
-showfit: True
+showfit: False
 show_stack_fit: False
 
 # use this flag to not mask anything
@@ -21,7 +21,7 @@ sigma_thresh: 3.0
 
 # user guess for starting row at which real signal
 # for the host galaxy starts
-start_row: 150
+start_row: 30
 
 # Pads for masking SN and host
 snmaskpad: 4

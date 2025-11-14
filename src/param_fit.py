@@ -78,7 +78,7 @@ def get_model_init(ymax, xhostloc, contamloc):
                               gamma=gamma_init, alpha=alpha_init,
                               bounds={'amplitude': (0, sn_amp_init*2),
                                       'x_0': snx0bounds,
-                                      'gamma': (0, 5),
+                                      'gamma': (0, 8),
                                       'alpha': (0, 2)})
 
     model_init = host_init + sn_init
@@ -96,7 +96,7 @@ def get_model_init(ymax, xhostloc, contamloc):
                                    gamma=gamma_init, alpha=alpha_init,
                                    bounds={'amplitude': (0, gal_amp_init),
                                            'x_0': x0bounds,
-                                           'gamma': (0, 10),
+                                           'gamma': (0, 25),
                                            'alpha': (0, 10)})
 
         model_init += gal_init
@@ -291,6 +291,10 @@ def gen_src_list(cfg):
     cat = np.genfromtxt(cat_filename, dtype=None, names=catheader,
                         encoding='ascii')
 
+    if cfg['verbose']:
+        print('\nGenerating source list and finding contaminants...')
+        np.set_printoptions(precision=2, suppress=True)
+
     # We're using the X,Y for now because for some reason
     # SExtractor isn't getting the RA,DEC right. It does
     # get teh X,Y correct.
@@ -301,27 +305,41 @@ def gen_src_list(cfg):
         allgalc1 = cat['X_IMAGE']
         allgalc2 = cat['Y_IMAGE']
 
-    # print('SExtractor coords with SN+HOST included:')
-    # print(allgalc1)
-    # print(allgalc2)
+    if cfg['verbose']:
+        print('SExtractor coords with SN+HOST included:')
+        print(allgalc1)
+        print(allgalc2)
+        print('SN and HOST coords (x,y):')
+        print('{:.2f}'.format(xsn), '{:.2f}'.format(ysn), '   ',
+              '{:.2f}'.format(xhost), '{:.2f}'.format(yhost))
 
-    # print('SN and HOST coords:')
-    # print(xsn, ysn, xhost, yhost)
     # Remove the SN and host from this list. We only want other
     # potential contaminants.
+    # We have to remove these one after the other. If you search
+    # for the matches first, in some cases you will get the same
+    # coords matched to both SN and host. So match_idx_list will
+    # only have one unique index which is wrong.
+
+    # first search for SN
     match_idx_sn = np.argmin(np.sqrt((xsn - allgalc1)**2
                                      + (ysn - allgalc2)**2))
+    print(np.sqrt((xsn - allgalc1)**2 + (ysn - allgalc2)**2))
+    # remove this index
+    allgalc1 = np.delete(allgalc1, match_idx_sn)
+    allgalc2 = np.delete(allgalc2, match_idx_sn)
+
+    # Now search for host
     match_idx_host = np.argmin(np.sqrt((xhost - allgalc1)**2
                                        + (yhost - allgalc2)**2))
-    match_idx_list = [match_idx_sn, match_idx_host]
+    print(np.sqrt((xhost - allgalc1)**2 + (yhost - allgalc2)**2))
+    # remove this index
+    allgalc1 = np.delete(allgalc1, match_idx_host)
+    allgalc2 = np.delete(allgalc2, match_idx_host)
 
-    # remove these indices
-    allgalc1 = np.delete(allgalc1, match_idx_list)
-    allgalc2 = np.delete(allgalc2, match_idx_list)
-
-    # print('Returning SExtractor coords with SN+HOST excluded:')
-    # print(allgalc1)
-    # print(allgalc2)
+    if cfg['verbose']:
+        print('Returning SExtractor coords with SN+HOST excluded:')
+        print(allgalc1)
+        print(allgalc2)
 
     return allgalc1, allgalc2, wcs_coord
 
@@ -431,9 +449,10 @@ def gen_contam_model(cutout, fname, cfg):
     Then proceed to fitting.
     """
     contam_gal_centers = select_contam_gal(fname, cfg)
-    print('Contaminating object locations that will be fit',
-          '(coordinates relative to cutout):')
-    print(contam_gal_centers)
+    if verbose:
+        print('\nContaminating object locations that will be fit',
+              '(coordinates relative to cutout):')
+        print(contam_gal_centers)
 
     # ----- Initialize the model
     # This is only done once because it is computationally expensive. Also,
@@ -944,6 +963,10 @@ def get_sn_model_avg_center(sn_fit):
     return avg_sn_cen_col
 
 
+def production_plot():
+    return None
+
+
 if __name__ == '__main__':
 
     # TODO list
@@ -976,6 +999,11 @@ if __name__ == '__main__':
     print('* NOTE: When using SExtractor to find contaminants,\n',
           'we have to exclude the SN+HOST. Write the generic case\n',
           'for multiple or no matches later within gen_src_list(...) later.')
+    print('* NOTE: Also when finding contaminants we remove the SN+HOST.\n',
+          'How do you know for sure that it was the SN and host that\n',
+          'got removed? Since we use np.argmin(...) to do this, there\n',
+          'is not guarantee of the correct match. What if there are\n',
+          'several close matches within argmin(...)?')
     print('* NOTE: Double check the scaling below to go from effective area\n',
           'units to throughput for the prism and F129 bandpasses.')
     print('* NOTE: Move to testing with HST data once above items are done.\n',
@@ -1099,7 +1127,7 @@ if __name__ == '__main__':
         # The end_row should be set to the end of the cutout
         # but this can be set to the start_row + some other
         # number of rows that you'd like to see fits for
-        end_row = start_row + 50  # start_row + 20  # cutout.shape[0]
+        end_row = cutout.shape[0]  # start_row + 20  # cutout.shape[0]
 
         # Now fit the profile
         xarr = np.arange(cs_x)
