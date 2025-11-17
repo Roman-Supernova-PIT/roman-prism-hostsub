@@ -40,7 +40,7 @@ spec_img_exptime: 900  # seconds
 # Smooth before fitting
 applysmoothingperrow: False  # smooth data on each row
 applystack: True  # stack the number of rows given below like a moving window filter
-stackrows: 6
+stackrows: 3
 
 # Paths for data
 paths:
@@ -55,15 +55,10 @@ paths:
 # Provide a list even if there is only one name
 # We assume that the host and SN input spectra are the same
 # for the entire file name list provided by the user.
-fname: ['test_2d_multipleGalaxies_WFI_WFI01_FULL_prism_rollAngle065.fits']
-# ['test_2d_multipleGalaxies_WFI_WFI01_FULL_prism_rollAngle045.fits',
-# 'test_2d_multipleGalaxies_WFI_WFI01_FULL_prism_rollAngle065.fits',
-#'test_2d_multipleGalaxies_WFI_WFI01_FULL_prism_rollAngle085.fits',
-# 'test_2d_multipleGalaxies_WFI_WFI01_FULL_prism_rollAngle105.fits']
-
-# The name of the direct image on which we will run our
-# intermediate SExtractor step to detect contaminating galaxies.
-dirimgfname: 'test_2d_multipleGalaxies_WFI_WFI01_FULL_F106_rollAngle045.fits'
+fname: ['test_2d_multipleGalaxies_WFI_WFI01_FULL_prism_rollAngle045.fits',
+        'test_2d_multipleGalaxies_WFI_WFI01_FULL_prism_rollAngle065.fits',
+        'test_2d_multipleGalaxies_WFI_WFI01_FULL_prism_rollAngle085.fits',
+        'test_2d_multipleGalaxies_WFI_WFI01_FULL_prism_rollAngle105.fits']
 
 # Extension numbers in FITS file
 sciextnum: 1

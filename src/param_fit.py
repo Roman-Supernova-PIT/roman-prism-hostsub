@@ -888,7 +888,7 @@ def run_sextractor(cfg, dry_run=False):
     """
 
     # get the direct image to run on from the config
-    dirimgfname = cfg['dirimgfname']
+    dirimgfname = fname.replace('prism', 'F106')
     # change the direct image name to just iclude the sci extention
     dirimgfname = dirimgfname + '[' + str(cfg['sciextnum']) + ']'
 
@@ -964,6 +964,53 @@ def get_sn_model_avg_center(sn_fit):
 
 
 def production_plot():
+
+    fig = plt.figure(figsize=(7, 6))
+    gs = GridSpec(22, 18, hspace=0.05, wspace=0.05,
+                  top=0.95, bottom=0.1, left=0.1, right=0.95)
+
+    ax1 = fig.add_subplot(gs[:7, :6])
+    ax2 = fig.add_subplot(gs[:7, 7:])
+    ax3 = fig.add_subplot(gs[10:, :6])
+    ax4 = fig.add_subplot(gs[10:, 6:12])
+    ax5 = fig.add_subplot(gs[10:, 12:])
+
+    # Plot the stamp from the direct image
+    dirimgfname = fname.replace('prism', 'F106')
+    dirimgdata = fits.getdata(datadir + dirimgfname, extname='SCI')
+    # make a 200x200 stamp around the SN location
+    dirimgstamp = dirimgdata[row-100: row+100,
+                             col-100: col+100]
+    ax1.imshow(np.log10(dirimgstamp), origin='lower',
+               vmin=1.2, vmax=2.6)
+    # put a large plus sign to indicate SN location
+    ax1.scatter(100, 100, marker='+', c='r', s=15, linewidths=0.6)
+
+    # Plot extracted 1D spectrum
+    ax2.plot(specwav, sn_1d_spec_phys, '-', color='crimson', lw=1.5)
+    ax2.text(x=0.52, y=0.92, s='Recovered SN spec [flam]',
+             transform=ax2.transAxes)
+    ax2.set_xlabel('Wavelength [microns]', fontsize=12)
+
+    ymax_specplot = 2e-19
+    ax2.set_xlim(0.65, 2.0)
+    ax2.set_ylim(1e-20, ymax_specplot)
+    ax2.set_yscale('log')
+
+    # Plot the three 2D images
+    ax3.imshow(np.log10(cutout), origin='lower', vmin=1.5, vmax=2.5)
+    ax3.set_title('Original image cutout')
+    ax4.imshow(np.log10(contam_2d), origin='lower', vmin=1.5, vmax=2.5)
+    ax4.set_title('Contamination model')
+    ax5.imshow(np.log10(recovered_sn_2d), origin='lower',
+               vmin=1.5, vmax=2.5)
+    ax5.set_title('SN residual')
+
+    fig.savefig(fname.replace('.fits', '_finalplot.png'),
+                dpi=300, bbox_inches='tight')
+    fig.clear()
+    plt.close(fig)
+
     return None
 
 
@@ -995,7 +1042,7 @@ if __name__ == '__main__':
           '(ii) how does the contam gal search change',
           'if the trace is not exactly vertical.')
     print('* NOTE: We are using alpha/delta_J2000 for the SExtractor\n',
-          'coordinates and ICRS for the sim images. Is this a problem?')
+          'coordinates and ICRS for the sim images. Fix this.')
     print('* NOTE: When using SExtractor to find contaminants,\n',
           'we have to exclude the SN+HOST. Write the generic case\n',
           'for multiple or no matches later within gen_src_list(...) later.')
@@ -1064,24 +1111,6 @@ if __name__ == '__main__':
         prismimg = fits.open(datadir + fname)
         prismdata = prismimg[sciextnum].data
 
-        # Need WCS before getting contaminating obj locations
-        """
-        wcs = WCS(fits.getheader(datadir + fname, ext=sciextnum))
-
-        # Get coordinates for potential contaminating objects
-        contam_gal_ra, contam_gal_dec = gen_src_list(cfg)
-        # Now convert to x and y locations of contaminants
-        xcontam = []
-        ycontam = []
-        for k in range(len(contam_gal_ra)):
-            cra = contam_gal_ra[k]
-            cdec = contam_gal_dec[k]
-            ccoord = SkyCoord(cra, cdec, frame='icrs', unit='deg')
-            xcc, ycc = get_obj_img_coords(ccoord, wcs)
-            xcontam.append(xcc)
-            ycontam.append(ycc)
-        """
-
         # get cutout size config
         cs_x = cfg['cutoutsize_x']
         cs_y_lo = cfg['cutoutsize_y_lo']
@@ -1104,15 +1133,22 @@ if __name__ == '__main__':
             alongside in the same figure.
             """
             fig = plt.figure()
-            ax = fig.add_subplot(111)
+            ax1 = fig.add_subplot(211)
+            ax2 = fig.add_subplot(212)
             # first plot dispersed image cutout
-            cax = ax.imshow(np.log10(cutout), origin='lower',
-                            vmin=1.2, vmax=2.6)
+            cax = ax1.imshow(np.log10(cutout), origin='lower',
+                             vmin=1.2, vmax=2.6)
             cbar = fig.colorbar(cax)
             cbar.set_label('log(pix val)')
 
             # plot corresponding area from direct image.
-
+            dirimgfname = fname.replace('prism', 'F106')
+            dirimgdata = fits.getdata(datadir + dirimgfname, extname='SCI')
+            # make a 200x200 stamp around the SN location
+            dirimgstamp = dirimgdata[row-100: row+100,
+                                     col-100: col+100]
+            ax2.imshow(np.log10(dirimgstamp), origin='lower',
+                       vmin=1.2, vmax=2.6)
 
             # plt.show()
             fig.savefig(fname.replace('.fits', '_cutout.png'), dpi=200,
@@ -1206,6 +1242,11 @@ if __name__ == '__main__':
                                                            subtract_bkg=False,
                                                            spec_img_exptime=et)
 
+        # Make the production plot
+        # When working with real data this function should be used.
+        # The rest of the plotting code below is for testing.
+        production_plot()
+
         # ==========
         # Show all host subtraction
         fig = plt.figure(figsize=(6, 6))
@@ -1264,6 +1305,16 @@ if __name__ == '__main__':
                              overwrite=True)
 
         # ==========
+        # Save the SN 1D spectrum to a text file
+        with open(fname.replace('.fits', '_sn1dspec.txt'), 'w') as fh:
+            fh.write('#  wavelength_microns  flam')
+            fh.write('\n')
+            for w in range(len(specwav)):
+                fh.write('{:.4f}'.format(specwav[w]))
+                fh.write('{:.4e}'.format(sn_1d_spec_phys[w]))
+                fh.write('\n')
+
+        # ==========
         # Now plot input and recovered spectra
         fig = plt.figure(figsize=(6, 4))
         gs = GridSpec(10, 5, hspace=0.05, wspace=0.05,
@@ -1294,10 +1345,10 @@ if __name__ == '__main__':
 
         ax1.legend(loc='upper right', fontsize=10)
 
-        ylim_specplot = 7.5e-19
+        ymax_specplot = 7.5e-19
 
         ax1.set_xlim(0.65, 2.0)
-        ax1.set_ylim(1e-20, ylim_specplot)
+        ax1.set_ylim(1e-20, ymax_specplot)
         ax1.set_yscale('log')
 
         ax1.set_xticklabels([])
