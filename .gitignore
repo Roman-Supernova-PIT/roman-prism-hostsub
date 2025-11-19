@@ -12,3 +12,4 @@ wheels/
 *.fits
 *.fits
 .DS_Store
+*.txt

@@ -39,6 +39,8 @@ import get_app_mag as gm  # noqa
 from bcolors import bcolors as bc  # noqa
 import romanprismdefs as rdef  # noqa
 
+dirimgfname = 'Roman_TDS_simple_model_Y106_36352_5.fits'
+
 
 def get_model_init(ymax, xhostloc, contamloc):
 
@@ -271,7 +273,7 @@ def get_sn_mask(cfg):
 def gen_src_list(cfg):
 
     # Run SExtractor first
-    run_sextractor(cfg)
+    run_sextractor(cfg, dirimgfname)
 
     # Flag to tell downstream function(s) if this function
     # has returned RA,DEC or X,Y
@@ -453,6 +455,8 @@ def gen_contam_model(cutout, fname, cfg):
         print('\nContaminating object locations that will be fit',
               '(coordinates relative to cutout):')
         print(contam_gal_centers)
+        print(len(contam_gal_centers),
+              'contaminating objects that will be considered.')
 
     # ----- Initialize the model
     # This is only done once because it is computationally expensive. Also,
@@ -875,7 +879,7 @@ def split_indices(indices, max_length):
     return sub_arrays
 
 
-def run_sextractor(cfg, dry_run=False):
+def run_sextractor(cfg, dirimgfname, dry_run=False):
     """
     SExtractor is run in an "aggressive deblending" mode --
     this ends up causing larger sources to be deblended more.
@@ -888,7 +892,7 @@ def run_sextractor(cfg, dry_run=False):
     """
 
     # get the direct image to run on from the config
-    dirimgfname = fname.replace('prism', 'F106')
+    # dirimgfname = fname.replace('SNPrism', 'J129')
     # change the direct image name to just iclude the sci extention
     dirimgfname = dirimgfname + '[' + str(cfg['sciextnum']) + ']'
 
@@ -897,6 +901,7 @@ def run_sextractor(cfg, dry_run=False):
     sextractor_config_fname = datadir + cfg['sextractor_config_fname']
 
     # Change directory to where teh direct image is
+    print('\nChanging dir to:', datadir)
     os.chdir(datadir)
 
     # print info
@@ -920,6 +925,7 @@ def run_sextractor(cfg, dry_run=False):
 
     # Change directory back to code
     os.chdir(srccodesdir)
+    print('Returning back to dir:', srccodesdir, '\n')
 
     return None
 
@@ -976,13 +982,13 @@ def production_plot():
     ax5 = fig.add_subplot(gs[10:, 12:])
 
     # Plot the stamp from the direct image
-    dirimgfname = fname.replace('prism', 'F106')
+    # dirimgfname = fname.replace('SNPrism', 'J129')
     dirimgdata = fits.getdata(datadir + dirimgfname, extname='SCI')
     # make a 200x200 stamp around the SN location
     dirimgstamp = dirimgdata[row-100: row+100,
                              col-100: col+100]
     ax1.imshow(np.log10(dirimgstamp), origin='lower',
-               vmin=1.2, vmax=2.6)
+               vmin=2.1, vmax=3.8)
     # put a large plus sign to indicate SN location
     ax1.scatter(100, 100, marker='+', c='r', s=15, linewidths=0.6)
 
@@ -992,18 +998,18 @@ def production_plot():
              transform=ax2.transAxes)
     ax2.set_xlabel('Wavelength [microns]', fontsize=12)
 
-    ymax_specplot = 2e-19
+    ymax_specplot = 1e-22
     ax2.set_xlim(0.65, 2.0)
-    ax2.set_ylim(1e-20, ymax_specplot)
+    ax2.set_ylim(1e-24, ymax_specplot)
     ax2.set_yscale('log')
 
     # Plot the three 2D images
-    ax3.imshow(np.log10(cutout), origin='lower', vmin=1.5, vmax=2.5)
+    ax3.imshow(np.log10(cutout), origin='lower')
     ax3.set_title('Original image cutout')
-    ax4.imshow(np.log10(contam_2d), origin='lower', vmin=1.5, vmax=2.5)
+    ax4.imshow(np.log10(contam_2d), origin='lower')
     ax4.set_title('Contamination model')
-    ax5.imshow(np.log10(recovered_sn_2d), origin='lower',
-               vmin=1.5, vmax=2.5)
+    ax5.imshow(np.log10(recovered_sn_2d), origin='lower')
+    # vmin=0.002, vmax=1.0)
     ax5.set_title('SN residual')
 
     fig.savefig(fname.replace('.fits', '_finalplot.png'),
@@ -1069,22 +1075,6 @@ if __name__ == '__main__':
     prism_effarea = roman_effarea['SNPrism'] * 1e4  # cm2
     prism_effarea_wave = roman_effarea['Wave'] * 1e4  # angstroms
 
-    # Read in input spectra
-    # We assume that the host and SN input spectra are the same
-    # for the entire file name list provided by the user.
-    host_spec_fname = datadir + cfg['host_spec_fname']
-    sn_spec_fname = datadir + cfg['sn_spec_fname']
-    host_input_wav, host_input_flux = np.loadtxt(host_spec_fname, unpack=True)
-
-    sn_input_wav, sn_input_flux = np.loadtxt(sn_spec_fname, unpack=True)
-    # this spectrum was scaled when input into the datacube for this sim
-    # it is scaled differently depending on the SN mag required for the sim
-    # so check this number in the multigalaxysim.ipynb notebook.
-    # we should probably save the scaled SN spectrum that was inserted
-    # instead of copy-pasting from the NB.
-    snsedscaling = 9.485776713818842
-    sn_input_flux *= snsedscaling
-
     fname_list = cfg['fname']
     for fname in fname_list:
         print('\nWorking on file:', fname)
@@ -1142,7 +1132,7 @@ if __name__ == '__main__':
             cbar.set_label('log(pix val)')
 
             # plot corresponding area from direct image.
-            dirimgfname = fname.replace('prism', 'F106')
+            # dirimgfname = fname.replace('prism', 'F106')
             dirimgdata = fits.getdata(datadir + dirimgfname, extname='SCI')
             # make a 200x200 stamp around the SN location
             dirimgstamp = dirimgdata[row-100: row+100,
@@ -1242,10 +1232,52 @@ if __name__ == '__main__':
                                                            subtract_bkg=False,
                                                            spec_img_exptime=et)
 
+        # ==========
+        # Save the SN residual as a fits file if you need to check in ds9
+        if cfg['savesncutout']:
+            sncutouthdu = fits.PrimaryHDU(data=recovered_sn_2d)
+            sncutouthdu.writeto(fname.replace('.fits', '_snonly.fits'),
+                                overwrite=True)
+
+            # Also save the model image
+            modelhdu = fits.PrimaryHDU(data=contam_2d)
+            modelhdu.writeto(fname.replace('.fits', '_contammodel.fits'),
+                             overwrite=True)
+
+        # ==========
+        # Save the SN 1D spectrum to a text file
+        with open(fname.replace('.fits', '_sn1dspec.txt'), 'w') as fh:
+            fh.write('#  wavelength_microns  flam')
+            fh.write('\n')
+            for w in range(len(specwav)):
+                fh.write('{:.4f}'.format(specwav[w]))
+                fh.write('{:.4e}'.format(sn_1d_spec_phys[w]))
+                fh.write('\n')
+
         # Make the production plot
         # When working with real data this function should be used.
         # The rest of the plotting code below is for testing.
         production_plot()
+        continue
+
+        # =====================
+        # Read in input spectra
+        # We assume that the host and SN input spectra are the same
+        # for the entire file name list provided by the user.
+        host_spec_fname = datadir + cfg['host_spec_fname']
+        sn_spec_fname = datadir + cfg['sn_spec_fname']
+        host_input_wav, host_input_flux = np.loadtxt(host_spec_fname,
+                                                     unpack=True)
+
+        sn_input_wav, sn_input_flux = np.loadtxt(sn_spec_fname, unpack=True)
+        # the input spectrum was scaled when input into the
+        # datacube for this sim it is scaled differently depending
+        # on the SN mag required for the sim
+        # so check this number in the multigalaxysim.ipynb notebook.
+        # we should probably save the scaled SN spectrum that was inserted
+        # instead of copy-pasting from the NB.
+        snsedscaling = 9.485776713818842
+        sn_input_flux *= snsedscaling
 
         # ==========
         # Show all host subtraction
@@ -1293,28 +1325,6 @@ if __name__ == '__main__':
               '{:.2f}'.format(f129_mag_input))
 
         # ==========
-        # Save the SN residual as a fits file if you need to check in ds9
-        if cfg['savesncutout']:
-            sncutouthdu = fits.PrimaryHDU(data=recovered_sn_2d)
-            sncutouthdu.writeto(fname.replace('.fits', '_snonly.fits'),
-                                overwrite=True)
-
-            # Also save the model image
-            modelhdu = fits.PrimaryHDU(data=contam_2d)
-            modelhdu.writeto(fname.replace('.fits', '_contammodel.fits'),
-                             overwrite=True)
-
-        # ==========
-        # Save the SN 1D spectrum to a text file
-        with open(fname.replace('.fits', '_sn1dspec.txt'), 'w') as fh:
-            fh.write('#  wavelength_microns  flam')
-            fh.write('\n')
-            for w in range(len(specwav)):
-                fh.write('{:.4f}'.format(specwav[w]))
-                fh.write('{:.4e}'.format(sn_1d_spec_phys[w]))
-                fh.write('\n')
-
-        # ==========
         # Now plot input and recovered spectra
         fig = plt.figure(figsize=(6, 4))
         gs = GridSpec(10, 5, hspace=0.05, wspace=0.05,
@@ -1345,10 +1355,10 @@ if __name__ == '__main__':
 
         ax1.legend(loc='upper right', fontsize=10)
 
-        ymax_specplot = 7.5e-19
+        ymax_specplot = 5e-18
 
         ax1.set_xlim(0.65, 2.0)
-        ax1.set_ylim(1e-20, ymax_specplot)
+        ax1.set_ylim(2e-20, ymax_specplot)
         ax1.set_yscale('log')
 
         ax1.set_xticklabels([])

@@ -1,0 +1,20 @@
+
+verbose: True
+bitmask: 0b0           # bad pixel mask values
+
+# sigma clip to refine the object mask?
+sigmaclip:
+  perform: True        # flag to perform
+  epsilon: 0.000001    # tolerance for changes in alpha
+  maxiter: 10          # maximum number of iterations
+  nsigma: 3.           # number of sigma for clipping [low, high]
+  
+# require minimum size for valid source?
+removesmall:
+  perform: True        # flag to perform
+  minsize: 10          # minimum number of pixels
+      
+# grow the regions?
+dilateregion:
+  perform: True        # flag to perform
+  size: [100, 10]      # size of the binary dilation operator

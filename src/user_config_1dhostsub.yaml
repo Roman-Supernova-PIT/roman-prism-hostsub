@@ -47,7 +47,7 @@ paths:
   home: '/Users/baj'
   prismdir: '/Documents/Roman/PIT/prism/'
   hostsubdir: 'hostlight_subtraction/'
-  datadir: 'simdata_prism_galsn/'
+  datadir: 'simdata_prism_galsn/nov2025_test/'
   srccodesdir: 'roman-prism-hostsub/src/'
   utilsdir: 'roman-prism-hostsub/utils/'
 
@@ -55,10 +55,7 @@ paths:
 # Provide a list even if there is only one name
 # We assume that the host and SN input spectra are the same
 # for the entire file name list provided by the user.
-fname: ['test_2d_multipleGalaxies_WFI_WFI01_FULL_prism_rollAngle045.fits',
-        'test_2d_multipleGalaxies_WFI_WFI01_FULL_prism_rollAngle065.fits',
-        'test_2d_multipleGalaxies_WFI_WFI01_FULL_prism_rollAngle085.fits',
-        'test_2d_multipleGalaxies_WFI_WFI01_FULL_prism_rollAngle105.fits']
+fname: ['Roman_TDS_simple_model_SNPrism_34649_14.fits']
 
 # Extension numbers in FITS file
 sciextnum: 1
@@ -69,10 +66,10 @@ sextractor_config_fname: 'romanprismhostsub_sextractor_config.txt'
 
 # Coordinates
 # SN and host
-snra: 4.082905535
-sndec: -48.42384403
-hostra: 4.083448424
-hostdec: -48.42376935
+snra: 7.50760768
+sndec: -44.82525718
+hostra: 7.507598711
+hostdec: -44.82524952
 
 # Input spectra
 host_spec_fname: 'lfgal.txt'
@@ -81,7 +78,7 @@ sn_spec_fname: 'lfnana.txt'
 # For 1D extraction
 # in pix
 # This is usually just for the SN
-obj_one_sided_width: 3
+obj_one_sided_width: 4
 
 # starting and ending wavelengths for x1d
 start_wav: 0.7
